@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gestor de Pólizas</title>
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
+  <style>
+    :root {
+      --primary: #1a1a2e;
+      --accent: #4f8ef7;
+      --accent-hover: #3a7be0;
+      --success: #22c55e;
+      --bg: #f0f2f5;
+      --card: #fff;
+      --border: #d1d5db;
+      --text: #333;
+      --text-light: #666;
+      --row-hover: #f0f5ff;
+      --row-selected: #dbeafe;
+      --row-h: 34px;
+      --sidebar-w: 220px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 14px; }
+
+    h1 { font-size: 1.4rem; color: var(--primary); margin-bottom: 3px; }
+    .subtitle { color: var(--text-light); font-size: 0.85rem; margin-bottom: 14px; }
+
+    /* ── UPLOAD ── */
+    .upload-card { background: var(--card); border-radius: 10px; padding: 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.07); margin-bottom: 14px; }
+    .upload-area { border: 2px dashed #b0b8c9; border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.3s; }
+    .upload-area:hover { border-color: var(--accent); background: #fafbfc; }
+    .upload-area input { display: none; }
+    .upload-area label { cursor: pointer; font-size: 0.95rem; color: var(--accent); font-weight: 600; display: block; margin-bottom: 4px; }
+    .upload-area p { color: #aaa; font-size: 0.8rem; margin-top: 3px; }
+    #file-name { margin-top: 8px; font-size: 0.85rem; color: var(--text); font-weight: 500; }
+
+    /* ── LAYOUT ── */
+    .main-layout { display: flex; gap: 14px; align-items: flex-start; }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      position: sticky;
+      top: 14px;
+      max-height: calc(100vh - 28px);
+      overflow-y: auto;
+    }
+    .sidebar::-webkit-scrollbar { width: 4px; }
+    .sidebar::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+
+    /* Botón toggle sidebar en móvil */
+    .sidebar-toggle {
+      display: none;
+      width: 100%;
+      padding: 10px;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 10px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    /* Cajones búsqueda rápida */
+    .quick-panel { background: var(--card); border-radius: 10px; padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); }
+    .panel-title { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-light); margin-bottom: 9px; font-weight: 700; }
+
+    .quick-field { margin-bottom: 7px; }
+    .quick-field label { font-size: 0.7rem; font-weight: 700; color: var(--primary); margin-bottom: 3px; display: block; text-transform: uppercase; }
+    .quick-field input { width: 100%; padding: 6px 8px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 0.82rem; outline: none; transition: border-color 0.2s; background: #fafbfc; }
+    .quick-field input:focus { border-color: var(--accent); background: #fff; box-shadow: 0 0 0 3px rgba(79,142,247,0.1); }
+    .quick-field input::placeholder { color: #ccc; }
+
+    .btn-clear-all { width: 100%; padding: 7px; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 6px; cursor: pointer; font-size: 0.78rem; font-weight: 700; color: #dc2626; transition: background 0.2s; margin-top: 4px; }
+    .btn-clear-all:hover { background: #fecaca; }
+
+    /* Paneles de filtro con checkboxes */
+    .filter-panel { background: var(--card); border-radius: 10px; padding: 10px 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); }
+
+    .fp-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 7px;
+      gap: 4px;
+    }
+    .fp-header h3 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--primary); font-weight: 700; }
+
+    /* Botones Todos / Ninguno */
+    .fp-btns { display: flex; gap: 4px; }
+    .fp-btn {
+      padding: 2px 7px;
+      border-radius: 4px;
+      border: none;
+      font-size: 0.68rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .fp-btn-all    { background: #e0f2fe; color: #0369a1; }
+    .fp-btn-all:hover    { background: #bae6fd; }
+    .fp-btn-none   { background: #fee2e2; color: #dc2626; }
+    .fp-btn-none:hover   { background: #fecaca; }
+
+    .fp-item { display: flex; align-items: center; gap: 6px; padding: 3px 3px; border-radius: 5px; cursor: pointer; transition: background 0.1s; user-select: none; }
+    .fp-item:hover { background: #f0f5ff; }
+    .fp-item input[type="checkbox"] { cursor: pointer; width: 13px; height: 13px; accent-color: var(--accent); flex-shrink: 0; }
+    .fp-item span.fp-label { font-size: 0.78rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; flex: 1; }
+    .fp-item .fp-count { font-size: 0.68rem; color: #aaa; flex-shrink: 0; background: #f3f4f6; padding: 1px 5px; border-radius: 10px; }
+
+    /* ── PANEL TABLA ── */
+    .table-panel { flex: 1; min-width: 0; }
+
+    /* Toolbar */
+    .toolbar { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin-bottom: 9px; }
+    #searchInput { flex: 1; min-width: 160px; padding: 8px 11px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 0.88rem; outline: none; transition: border-color 0.2s; }
+    #searchInput:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,142,247,0.1); }
+
+    .btn { padding: 8px 12px; border: none; border-radius: 8px; cursor: pointer; font-size: 0.8rem; font-weight: 600; transition: all 0.2s; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary  { background: var(--accent); color: #fff; }
+    .btn-primary:hover  { background: var(--accent-hover); }
+    .btn-success  { background: var(--success); color: #fff; }
+    .btn-success:hover  { background: #16a34a; }
+    .btn-outline  { background: #fff; border: 1.5px solid var(--accent); color: var(--accent); }
+    .btn-outline:hover  { background: #eef4ff; }
+    .btn-pdf      { background: #e11d48; color: #fff; }
+    .btn-pdf:hover      { background: #be123c; }
+
+    /* Leyenda */
+    .leyenda { display: flex; gap: 12px; align-items: center; margin-bottom: 7px; flex-wrap: wrap; }
+    .leyenda-item { display: flex; align-items: center; gap: 4px; font-size: 0.76rem; color: var(--text-light); font-weight: 500; }
+    .leyenda-dot { width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.12); flex-shrink: 0; }
+    .dot-vigor { background: #fff; }
+    .dot-anulada { background: #fee2e2; }
+    .dot-suspendida { background: #ffedd5; }
+
+    .stats { font-size: 0.8rem; color: var(--text-light); margin-bottom: 8px; font-weight: 500; }
+
+    /* ── TABLA ── */
+    .table-outer { border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+    .table-head-wrap { overflow: hidden; background: var(--primary); }
+    #headerTable { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
+    #headerTable th { padding: 0; border-right: 1px solid rgba(255,255,255,0.1); color: #fff; font-weight: 600; white-space: nowrap; }
+    #headerTable th:last-child { border-right: none; }
+    .th-inner { display: flex; align-items: center; justify-content: space-between; padding: 8px 9px; gap: 5px; }
+    .th-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .filter-btn { background: none; border: none; color: rgba(255,255,255,0.55); cursor: pointer; font-size: 0.72rem; padding: 2px 3px; border-radius: 3px; transition: all 0.15s; flex-shrink: 0; line-height: 1; }
+    .filter-btn:hover { color: #fff; background: rgba(255,255,255,0.15); }
+    .filter-btn.active { color: #facc15; }
+
+    .table-scroll-wrap { overflow-y: auto; overflow-x: auto; height: 540px; position: relative; }
+    .table-scroll-wrap::-webkit-scrollbar { height: 7px; width: 7px; }
+    .table-scroll-wrap::-webkit-scrollbar-track { background: #f1f1f1; }
+    .table-scroll-wrap::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+
+    #spacerTop, #spacerBottom { width: 100%; }
+    #bodyTable { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+
+    tbody tr { border-bottom: 1px solid #e5e7eb; transition: background 0.1s; cursor: pointer; min-height: var(--row-h); }
+    tbody tr.row-vigor      { background: #fff; }
+    tbody tr.row-anulada    { background: #fee2e2; }
+    tbody tr.row-suspendida { background: #ffedd5; }
+    tbody tr.row-vigor:hover      { background: #f0f5ff; }
+    tbody tr.row-anulada:hover    { background: #fecaca; }
+    tbody tr.row-suspendida:hover { background: #fed7aa; }
+    tbody tr.selected { background: var(--row-selected) !important; }
+
+    tbody td { padding: 4px 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: var(--row-h); max-width: 150px; vertical-align: middle; }
+    tbody td.col-cliente, tbody td.col-riesgo { white-space: normal; overflow: visible; text-overflow: unset; max-width: 280px; min-width: 160px; word-break: break-word; line-height: 1.4; height: auto; vertical-align: middle; }
+
+    .checkbox-col { width: 32px; text-align: center; }
+    .checkbox-col input[type="checkbox"] { cursor: pointer; width: 13px; height: 13px; }
+
+    #noData { text-align: center; padding: 50px; color: #aaa; font-size: 0.95rem; }
+    #tableSection { display: none; }
+
+    /* ── DROPDOWN TIPO EXCEL ── */
+    .filter-dropdown { display: none; position: fixed; background: #fff; border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.18); z-index: 9999; min-width: 200px; max-width: 260px; overflow: hidden; }
+    .filter-dropdown.open { display: block; }
+    .fd-header { background: var(--primary); color: #fff; padding: 9px 13px; font-size: 0.82rem; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+    .fd-close { background: none; border: none; color: rgba(255,255,255,0.7); cursor: pointer; font-size: 0.95rem; }
+    .fd-close:hover { color: #fff; }
+    .fd-search { padding: 7px 9px; border-bottom: 1px solid #f0f0f0; }
+    .fd-search input { width: 100%; padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.8rem; outline: none; }
+    .fd-search input:focus { border-color: var(--accent); }
+    .fd-list { max-height: 220px; overflow-y: auto; padding: 4px 0; }
+    .fd-item { display: flex; align-items: center; gap: 7px; padding: 5px 13px; cursor: pointer; font-size: 0.8rem; transition: background 0.1s; user-select: none; }
+    .fd-item:hover { background: #f0f5ff; }
+    .fd-item input[type="checkbox"] { cursor: pointer; width: 13px; height: 13px; accent-color: var(--accent); flex-shrink: 0; }
+    .fd-item.select-all { border-bottom: 1px solid #e5e7eb; font-weight: 600; color: var(--accent); padding-bottom: 7px; }
+    .fd-footer { padding: 7px 13px; border-top: 1px solid #e5e7eb; display: flex; gap: 7px; justify-content: flex-end; }
+    .fd-footer button { padding: 5px 11px; border-radius: 6px; border: none; cursor: pointer; font-size: 0.78rem; font-weight: 600; }
+    .fd-btn-apply { background: var(--accent); color: #fff; }
+    .fd-btn-apply:hover { background: var(--accent-hover); }
+    .fd-btn-clear { background: #f3f4f6; color: #374151; border: 1px solid var(--border); }
+    .fd-btn-clear:hover { background: #e5e7eb; }
+
+    /* ══════════════════════════════
+       RESPONSIVE
+    ══════════════════════════════ */
+
+    /* Tablet (< 1024px): sidebar más estrecho */
+    @media (max-width: 1024px) {
+      :root { --sidebar-w: 190px; }
+    }
+
+    /* Móvil (< 768px): sidebar colapsa en panel deslizante */
+    @media (max-width: 768px) {
+      body { padding: 10px; }
+      h1 { font-size: 1.2rem; }
+
+      .sidebar-toggle { display: flex; }
+
+      .main-layout { flex-direction: column; }
+
+      .sidebar {
+        width: 100%;
+        position: static;
+        max-height: none;
+        overflow: visible;
+        display: none; /* oculto por defecto en móvil */
+      }
+      .sidebar.open { display: flex; }
+
+      .table-scroll-wrap { height: 420px; }
+
+      .toolbar { gap: 5px; }
+      .btn { padding: 7px 10px; font-size: 0.78rem; }
+      #searchInput { min-width: 120px; }
+
+      /* Paneles de filtro en grid 2 columnas en móvil */
+      .sidebar-inner {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .quick-panel { grid-column: 1 / -1; }
+      .btn-clear-all-wrap { grid-column: 1 / -1; }
+    }
+
+    /* Pantalla muy pequeña (< 480px) */
+    @media (max-width: 480px) {
+      .sidebar-inner { grid-template-columns: 1fr; }
+      .toolbar { flex-direction: column; align-items: stretch; }
+      .btn { justify-content: center; }
+      .table-scroll-wrap { height: 360px; }
+    }
+  </style>
+</head>
+<body>
+
+<h1>📋 Gestor de Pólizas</h1>
+<p class="subtitle">Búsquedas rápidas · Filtros tipo Excel · Virtual scroll · Exportación Excel, CSV y PDF</p>
+
+<div class="upload-card">
+  <div class="upload-area">
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" />
+    <label for="fileInput">📁 Haz clic para subir tu archivo de pólizas</label>
+    <p>Formatos admitidos: .xlsx, .xls, .csv</p>
+    <p id="file-name"></p>
+  </div>
+</div>
+
+<div id="tableSection">
+
+  <!-- Botón toggle sidebar (solo móvil) -->
+  <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()">
+    ☰ Mostrar filtros y búsquedas
+  </button>
+
+  <div class="main-layout">
+
+    <!-- ══ SIDEBAR ══ -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-inner">
+
+        <!-- Cajones de búsqueda rápida -->
+        <div class="quick-panel">
+          <div class="panel-title">🔎 Búsqueda rápida</div>
+          <div class="quick-field"><label>Póliza</label><input id="qs-0" type="text" placeholder="Nº póliza..." /></div>
+          <div class="quick-field"><label>Cliente</label><input id="qs-1" type="text" placeholder="Nombre..." /></div>
+          <div class="quick-field"><label>Móvil</label><input id="qs-2" type="text" placeholder="Teléfono..." /></div>
+          <div class="quick-field"><label>Riesgo</label><input id="qs-3" type="text" placeholder="Descripción..." /></div>
+          <div class="quick-field"><label>DNI / Documento</label><input id="qs-4" type="text" placeholder="DNI / NIF..." /></div>
+        </div>
+
+        <!-- Botón limpiar todo -->
+        <div class="btn-clear-all-wrap">
+          <button class="btn-clear-all" onclick="clearAll()">🗑️ Limpiar todos los filtros</button>
+        </div>
+
+        <!-- Paneles de filtro por columna — generados dinámicamente -->
+        <div id="filterPanels" style="display:contents;"></div>
+
+      </div>
+    </div>
+
+    <!-- ══ TABLA ══ -->
+    <div class="table-panel">
+
+      <div class="toolbar">
+        <input type="text" id="searchInput" placeholder="🔍 Búsqueda global..." />
+        <button class="btn btn-outline" onclick="selectAllVisible()">☑ Visibles</button>
+        <button class="btn btn-outline" onclick="clearSelection()">✖ Selec.</button>
+        <button class="btn btn-success" onclick="exportData('excel')">Excel 📥</button>
+        <button class="btn btn-primary" onclick="exportData('csv')">CSV 📥</button>
+        <button class="btn btn-pdf" onclick="exportData('pdf')">PDF 📄</button>
+      </div>
+
+      <div class="leyenda">
+        <span style="font-size:0.76rem;font-weight:600;color:var(--text-light);">Leyenda:</span>
+        <div class="leyenda-item"><div class="leyenda-dot dot-vigor"></div> Vigor</div>
+        <div class="leyenda-item"><div class="leyenda-dot dot-anulada"></div> Anulada</div>
+        <div class="leyenda-item"><div class="leyenda-dot dot-suspendida"></div> Suspendida</div>
+      </div>
+
+      <div class="stats" id="statsBar"></div>
+
+      <div class="table-outer">
+        <div class="table-head-wrap" id="headWrap">
+          <table id="headerTable"><thead id="tableHead"></thead></table>
+        </div>
+        <div class="table-scroll-wrap" id="scrollWrap">
+          <div id="spacerTop"></div>
+          <table id="bodyTable"><tbody id="tableBody"></tbody></table>
+          <div id="spacerBottom"></div>
+        </div>
+      </div>
+      <div id="noData" style="display:none;text-align:center;padding:50px;color:#aaa;">Sin resultados.</div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Dropdown tipo Excel -->
+<div class="filter-dropdown" id="filterDropdown">
+  <div class="fd-header"><span id="fd-title">Filtrar</span><button class="fd-close" onclick="closeDropdown()">✕</button></div>
+  <div class="fd-search"><input type="text" id="fd-search-input" placeholder="Buscar valor..." oninput="renderDropdownItems()" /></div>
+  <div class="fd-list" id="fd-list"></div>
+  <div class="fd-footer">
+    <button class="fd-btn-clear" onclick="clearColumnFilter()">Limpiar</button>
+    <button class="fd-btn-apply" onclick="applyColumnFilter()">Aplicar</button>
+  </div>
+</div>
+
+<script>
+  // ── Estado global ──────────────────────────────────────────
+  let allData       = [];
+  let headers       = [];
+  let filteredData  = [];
+  let selectedRows  = new Set();
+  let columnFilters = {};
+  let panelFilters  = {};
+  let colIndex      = {};
+
+  const ROW_H  = 34;
+  const BUFFER = 10;
+  let visStart = 0, visEnd = 0;
+  let activeColumn = null, pendingChecked = null;
+  let searchTimer  = null;
+
+  const WIDE_COLS = { 'cliente':'col-cliente','nombre':'col-cliente','riesgo':'col-riesgo' };
+
+  const PANEL_COLS = [
+    { label:'Situación',     norm:'situacion'    },
+    { label:'CVM',           norm:'cvm'          },
+    { label:'Vto',           norm:'vto'          },
+    { label:'Medofi',        norm:'medofi'       },
+    { label:'Ramo',          norm:'ramo'         },
+    { label:'Subagente',     norm:'subagente'    },
+    { label:'Canal de pago', norm:'canal de pago'},
+    { label:'Forma de Pago', norm:'forma de pago'},
+  ];
+
+  const QUICK_MAP = [
+    { id:'qs-0', aliases:['poliza','póliza','num poliza','nº poliza','numero poliza'] },
+    { id:'qs-1', aliases:['cliente','nombre','nombre cliente'] },
+    { id:'qs-2', aliases:['telefono movil','teléfono movil','telefono m','tel movil','movil','móvil','telefono'] },
+    { id:'qs-3', aliases:['riesgo'] },
+    { id:'qs-4', aliases:['documento','dni','nif','document','doc'] },
+  ];
+  let quickColResolved = {};
+
+  const norm = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
+
+  let _sitCol = null;
+  function getRowClass(row) {
+    if (!_sitCol) return 'row-vigor';
+    const v = norm(String(row[_sitCol]||''));
+    if (v.includes('anul'))   return 'row-anulada';
+    if (v.includes('suspen')) return 'row-suspendida';
+    return 'row-vigor';
+  }
+
+  // ── Toggle sidebar móvil ───────────────────────────────────
+  function toggleSidebar() {
+    const sb  = document.getElementById('sidebar');
+    const btn = document.getElementById('sidebarToggle');
+    sb.classList.toggle('open');
+    btn.textContent = sb.classList.contains('open') ? '✕ Ocultar filtros' : '☰ Mostrar filtros y búsquedas';
+  }
+
+  // ── Cargar archivo ─────────────────────────────────────────
+  document.getElementById('fileInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    document.getElementById('file-name').textContent = '📄 ' + file.name;
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+      const wb   = XLSX.read(new Uint8Array(ev.target.result), { type:'array' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(ws, { defval:'' });
+      if (!json.length) { alert('Archivo vacío.'); return; }
+
+      headers = Object.keys(json[0]);
+      allData = json.map((row,i) => ({ __id:i, ...row }));
+      selectedRows.clear();
+      columnFilters = {};
+      panelFilters  = {};
+
+      buildIndex();
+
+      _sitCol = headers.find(h => norm(h) === 'situacion') || null;
+
+      quickColResolved = {};
+      QUICK_MAP.forEach(({ id, aliases }) => {
+        let match = headers.find(h => aliases.includes(norm(h)));
+        if (!match) match = headers.find(h => aliases.some(a => norm(h).includes(a) || a.includes(norm(h))));
+        if (match) quickColResolved[id] = match;
+      });
+
+      document.getElementById('tableSection').style.display = 'block';
+      buildFilterPanels();
+      setupQuickSearch();
+      applyFilters();
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  // ── Índice invertido ───────────────────────────────────────
+  function buildIndex() {
+    colIndex = {};
+    headers.forEach(h => {
+      colIndex[h] = new Map();
+      allData.forEach(row => {
+        const v = String(row[h]).trim();
+        if (!colIndex[h].has(v)) colIndex[h].set(v, new Set());
+        colIndex[h].get(v).add(row.__id);
+      });
+    });
+  }
+
+  // ── Construir paneles de filtro ────────────────────────────
+  function buildFilterPanels() {
+    const container = document.getElementById('filterPanels');
+    container.innerHTML = '';
+    panelFilters = {};
+
+    PANEL_COLS.forEach(({ label, norm: normKey }) => {
+      const col = headers.find(h => norm(h) === normKey)
+               || headers.find(h => norm(h).includes(normKey) || normKey.includes(norm(h)));
+      if (!col) return;
+
+      const vals = [...(colIndex[col]?.keys() || [])].filter(v => v !== '').sort();
+      if (!vals.length) return;
+
+      panelFilters[col] = null; // null = todos
+
+      const panel = document.createElement('div');
+      panel.className = 'filter-panel';
+      panel.dataset.col = col;
+
+      // Cabecera con botones TODOS y NINGUNO
+      const header = document.createElement('div');
+      header.className = 'fp-header';
+      header.innerHTML = `
+        <h3>${label}</h3>
+        <div class="fp-btns">
+          <button class="fp-btn fp-btn-all"  onclick="setPanelAll('${col.replace(/'/g,"\\'")}', true)">Todos</button>
+          <button class="fp-btn fp-btn-none" onclick="setPanelAll('${col.replace(/'/g,"\\'")}', false)">Ninguno</button>
+        </div>
+      `;
+      panel.appendChild(header);
+
+      // Items con checkbox
+      vals.forEach(val => {
+        const count = colIndex[col].get(val)?.size || 0;
+        const item  = document.createElement('div');
+        item.className = 'fp-item';
+        item.dataset.val = val;
+
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = true;
+        cb.dataset.col = col;
+        cb.dataset.val = val;
+        cb.addEventListener('change', function() {
+          onPanelCheck(col, panel);
+        });
+
+        const spanLabel = document.createElement('span');
+        spanLabel.className = 'fp-label';
+        spanLabel.title = val;
+        spanLabel.textContent = val.length > 20 ? val.slice(0,20)+'…' : val;
+
+        const spanCount = document.createElement('span');
+        spanCount.className = 'fp-count';
+        spanCount.textContent = count;
+
+        item.appendChild(cb);
+        item.appendChild(spanLabel);
+        item.appendChild(spanCount);
+
+        // Clic en la fila también activa el checkbox
+        item.addEventListener('click', function(e) {
+          if (e.target !== cb) { cb.checked = !cb.checked; onPanelCheck(col, panel); }
+        });
+
+        panel.appendChild(item);
+      });
+
+      container.appendChild(panel);
+    });
+  }
+
+  // Marcar todos o ninguno en un panel
+  function setPanelAll(col, checked) {
+    const panel = [...document.querySelectorAll('.filter-panel')].find(p => p.dataset.col === col);
+    if (!panel) return;
+    panel.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = checked);
+    panelFilters[col] = checked ? null : new Set();
+    applyFilters();
+  }
+
+  function onPanelCheck(col, panel) {
+    const allCbs     = panel.querySelectorAll('input[type=checkbox]');
+    const checkedArr = [...allCbs].filter(c => c.checked);
+
+    if (checkedArr.length === allCbs.length) {
+      panelFilters[col] = null;
+    } else if (checkedArr.length === 0) {
+      panelFilters[col] = new Set();
+    } else {
+      panelFilters[col] = new Set(checkedArr.map(c => c.dataset.val));
+    }
+    applyFilters();
+  }
+
+  // ── Cajones rápidos ────────────────────────────────────────
+  function setupQuickSearch() {
+    QUICK_MAP.forEach(({ id }) => {
+      const el = document.getElementById(id);
+      if (el) el.oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(applyFilters, 150); };
+    });
+  }
+
+  document.getElementById('searchInput').addEventListener('input', function() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(applyFilters, 180);
+  });
+
+  // ── Filtrado combinado ─────────────────────────────────────
+  function applyFilters() {
+    const globalQ = document.getElementById('searchInput').value.toLowerCase().trim();
+
+    // 1. Dropdowns cabecera
+    let allowedIds = null;
+    for (const col in columnFilters) {
+      const allowed = columnFilters[col];
+      if (!allowed || allowed.size === 0) continue;
+      let colIds = new Set();
+      allowed.forEach(val => { const ids = colIndex[col]?.get(val); if (ids) ids.forEach(id => colIds.add(id)); });
+      allowedIds = allowedIds === null ? colIds : new Set([...allowedIds].filter(id => colIds.has(id)));
+    }
+
+    // 2. Paneles sidebar
+    for (const col in panelFilters) {
+      const allowed = panelFilters[col];
+      if (allowed === null) continue;
+      let colIds = new Set();
+      allowed.forEach(val => { const ids = colIndex[col]?.get(val); if (ids) ids.forEach(id => colIds.add(id)); });
+      allowedIds = allowedIds === null ? colIds : new Set([...allowedIds].filter(id => colIds.has(id)));
+    }
+
+    let base = allowedIds !== null ? [...allowedIds].map(id => allData[id]) : allData;
+
+    // 3. Cajones rápidos
+    QUICK_MAP.forEach(({ id }) => {
+      const col = quickColResolved[id];
+      if (!col) return;
+      const val = document.getElementById(id)?.value.toLowerCase().trim() || '';
+      if (val) base = base.filter(row => String(row[col]??'').toLowerCase().includes(val));
+    });
+
+    // 4. Global
+    if (globalQ) base = base.filter(row => headers.some(h => String(row[h]).toLowerCase().includes(globalQ)));
+
+    filteredData = base;
+    renderHeader();
+    renderVirtual();
+    updateStats();
+  }
+
+  // Limpiar todo
+  function clearAll() {
+    QUICK_MAP.forEach(({ id }) => { const el = document.getElementById(id); if (el) el.value = ''; });
+    document.getElementById('searchInput').value = '';
+    columnFilters = {};
+    document.querySelectorAll('.filter-panel').forEach(panel => {
+      const col = panel.dataset.col;
+      panelFilters[col] = null;
+      panel.querySelectorAll('input[type=checkbox]').forEach(c => c.checked = true);
+    });
+    closeDropdown();
+    applyFilters();
+  }
+
+  // ── Virtual scroll ─────────────────────────────────────────
+  const scrollWrap = document.getElementById('scrollWrap');
+  scrollWrap.addEventListener('scroll', function() {
+    document.getElementById('headWrap').scrollLeft = this.scrollLeft;
+    const newStart = Math.max(0, Math.floor(this.scrollTop / ROW_H) - BUFFER);
+    const newEnd   = Math.min(filteredData.length, Math.ceil((this.scrollTop + this.clientHeight) / ROW_H) + BUFFER);
+    if (newStart !== visStart || newEnd !== visEnd) { visStart = newStart; visEnd = newEnd; renderRows(); }
+  });
+  document.getElementById('headWrap').style.overflowX = 'hidden';
+
+  function renderVirtual() {
+    const noData = document.getElementById('noData');
+    if (!filteredData.length) {
+      document.getElementById('bodyTable').style.display = 'none';
+      document.getElementById('spacerTop').style.height = '0';
+      document.getElementById('spacerBottom').style.height = '0';
+      noData.style.display = 'block'; return;
+    }
+    noData.style.display = 'none';
+    document.getElementById('bodyTable').style.display = '';
+    scrollWrap.scrollTop = 0;
+    visStart = 0;
+    visEnd   = Math.min(filteredData.length, Math.ceil(scrollWrap.clientHeight / ROW_H) + BUFFER);
+    document.getElementById('spacerTop').style.height    = '0';
+    document.getElementById('spacerBottom').style.height = ((filteredData.length - visEnd) * ROW_H) + 'px';
+    renderRows();
+  }
+
+  function renderRows() {
+    const tbody = document.getElementById('tableBody');
+    document.getElementById('spacerTop').style.height    = (visStart * ROW_H) + 'px';
+    document.getElementById('spacerBottom').style.height = ((filteredData.length - visEnd) * ROW_H) + 'px';
+    const frag = document.createDocumentFragment();
+    for (let i = visStart; i < visEnd; i++) {
+      const row = filteredData[i];
+      const tr  = document.createElement('tr');
+      tr.classList.add(getRowClass(row));
+      if (selectedRows.has(row.__id)) tr.classList.add('selected');
+      const tdCb = document.createElement('td');
+      tdCb.className = 'checkbox-col';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.checked = selectedRows.has(row.__id);
+      cb.addEventListener('click', e => { e.stopPropagation(); toggleRow(row.__id, tr, cb); });
+      tdCb.appendChild(cb); tr.appendChild(tdCb);
+      headers.forEach(h => {
+        const td  = document.createElement('td');
+        const val = String(row[h]??'');
+        td.textContent = val; td.title = val;
+        const cls = WIDE_COLS[norm(h)]; if (cls) td.classList.add(cls);
+        tr.appendChild(td);
+      });
+      tr.addEventListener('click', () => toggleRow(row.__id, tr, tr.querySelector('input[type=checkbox]')));
+      frag.appendChild(tr);
+    }
+    tbody.innerHTML = '';
+    tbody.appendChild(frag);
+  }
+
+  // ── Cabecera ───────────────────────────────────────────────
+  function renderHeader() {
+    const thead = document.getElementById('tableHead');
+    const thCb  = `<th class="checkbox-col" style="width:32px;"><div class="th-inner" style="justify-content:center;padding:8px 4px;"><input type="checkbox" id="chkAll" onchange="toggleAllVisible(this.checked)" style="cursor:pointer;width:13px;height:13px;"></div></th>`;
+    const thCols = headers.map(h => {
+      const active = columnFilters[h] && columnFilters[h].size > 0;
+      const safeH  = h.replace(/'/g,"\\'");
+      return `<th><div class="th-inner"><span class="th-label" title="${h}">${h}</span><button class="filter-btn ${active?'active':''}" onclick="openDropdown(event,'${safeH}')">${active?'▼':'⏷'}</button></div></th>`;
+    }).join('');
+    thead.innerHTML = `<tr>${thCb}${thCols}</tr>`;
+  }
+
+  // ── Selección ──────────────────────────────────────────────
+  function toggleRow(id, trEl, cbEl) {
+    if (selectedRows.has(id)) { selectedRows.delete(id); trEl.classList.remove('selected'); if (cbEl) cbEl.checked = false; }
+    else { selectedRows.add(id); trEl.classList.add('selected'); if (cbEl) cbEl.checked = true; }
+    updateStats();
+  }
+  function toggleAllVisible(c) { filteredData.forEach(r => { if(c) selectedRows.add(r.__id); else selectedRows.delete(r.__id); }); renderRows(); updateStats(); }
+  function selectAllVisible()  { filteredData.forEach(r => selectedRows.add(r.__id)); renderRows(); updateStats(); }
+  function clearSelection()    { selectedRows.clear(); renderRows(); updateStats(); }
+
+  function updateStats() {
+    const ca = Object.values(columnFilters).filter(s => s && s.size > 0).length;
+    const pa = Object.values(panelFilters).filter(s => s !== null).length;
+    const qa = QUICK_MAP.filter(({id}) => document.getElementById(id)?.value.trim()).length;
+    document.getElementById('statsBar').textContent =
+      `Mostrando ${filteredData.length.toLocaleString()} de ${allData.length.toLocaleString()} filas · ${selectedRows.size} seleccionadas · ${ca+pa+qa} filtro(s) activo(s)`;
+  }
+
+  // ── Dropdown tipo Excel ────────────────────────────────────
+  function openDropdown(event, col) {
+    event.stopPropagation();
+    activeColumn = col; pendingChecked = columnFilters[col] ? new Set(columnFilters[col]) : null;
+    document.getElementById('fd-title').textContent  = col;
+    document.getElementById('fd-search-input').value = '';
+    renderDropdownItems();
+    const dd = document.getElementById('filterDropdown');
+    const rect = event.currentTarget.getBoundingClientRect();
+    let left = rect.left;
+    if (left + 240 > window.innerWidth - 10) left = window.innerWidth - 250;
+    let top = rect.bottom + 4;
+    if (top + 350 > window.innerHeight) top = rect.top - 350;
+    dd.style.left = left + 'px'; dd.style.top = Math.max(10,top) + 'px';
+    dd.classList.add('open');
+  }
+
+  function renderDropdownItems() {
+    const sv   = document.getElementById('fd-search-input').value.toLowerCase();
+    const list = document.getElementById('fd-list');
+    let vals = [...(colIndex[activeColumn]?.keys() || [])].sort();
+    if (sv) vals = vals.filter(v => v.toLowerCase().includes(sv));
+    const allSel = pendingChecked === null || vals.every(v => pendingChecked.has(v));
+    list.innerHTML = '';
+    const sa = document.createElement('div');
+    sa.className = 'fd-item select-all';
+    sa.innerHTML = `<input type="checkbox" ${allSel?'checked':''}><span>(Seleccionar todo)</span>`;
+    sa.querySelector('input').addEventListener('change', e => { pendingChecked = e.target.checked ? null : new Set(); renderDropdownItems(); });
+    list.appendChild(sa);
+    vals.forEach(val => {
+      const chk  = pendingChecked === null || pendingChecked.has(val);
+      const item = document.createElement('div');
+      item.className = 'fd-item';
+      const label = val === '' ? '(en blanco)' : (val.length > 30 ? val.slice(0,30)+'…' : val);
+      item.innerHTML = `<input type="checkbox" ${chk?'checked':''}><span title="${val}">${label}</span>`;
+      item.querySelector('input').addEventListener('change', e => {
+        if (pendingChecked === null) pendingChecked = new Set([...(colIndex[activeColumn]?.keys()||[])].filter(v => v !== val));
+        else { if (e.target.checked) pendingChecked.add(val); else pendingChecked.delete(val); }
+        renderDropdownItems();
+      });
+      list.appendChild(item);
+    });
+  }
+
+  function applyColumnFilter() { if (pendingChecked===null) delete columnFilters[activeColumn]; else columnFilters[activeColumn]=pendingChecked; closeDropdown(); applyFilters(); }
+  function clearColumnFilter()  { delete columnFilters[activeColumn]; pendingChecked=null; closeDropdown(); applyFilters(); }
+  function closeDropdown()      { document.getElementById('filterDropdown').classList.remove('open'); activeColumn=null; }
+
+  document.addEventListener('click', function(e) {
+    const dd = document.getElementById('filterDropdown');
+    if (dd.classList.contains('open') && !dd.contains(e.target) && !e.target.classList.contains('filter-btn')) closeDropdown();
+  });
+
+  // ── Exportar ───────────────────────────────────────────────
+  function exportData(format) {
+    const rows = allData.filter(r => selectedRows.has(r.__id));
+    if (!rows.length) { alert('Selecciona al menos una fila para exportar.'); return; }
+    const clean = rows.map(r => { const o={}; headers.forEach(h => o[h]=r[h]); return o; });
+
+    if (format === 'csv') {
+      const ws = XLSX.utils.json_to_sheet(clean, { header:headers });
+      downloadBlob(XLSX.utils.sheet_to_csv(ws), 'polizas.csv', 'text/csv');
+    } else if (format === 'excel') {
+      const ws = XLSX.utils.json_to_sheet(clean, { header:headers });
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Pólizas');
+      XLSX.writeFile(wb, 'polizas.xlsx');
+    } else {
+      exportToPDF(clean);
+    }
+  }
+
+  function exportToPDF(rows) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('p','mm','a4');
+    doc.setFontSize(13); doc.text('Exportación de Pólizas', 14, 14);
+    doc.setFontSize(9);  doc.text(`Fecha: ${new Date().toLocaleDateString('es-ES')}   ·   Registros: ${rows.length}`, 14, 21);
+    const pdfCols   = ['Póliza','Cliente','Riesgo','Ramo','Vto','Importe Anual','Situación','Población'];
+    const cols      = pdfCols.filter(c => headers.includes(c));
+    const finalCols = cols.length > 0 ? cols : headers.slice(0,8);
+    const tableData = rows.map(r => finalCols.map(h => String(r[h]??'')));
+    doc.autoTable({
+      head:[finalCols], body:tableData, startY:26,
+      styles:{ fontSize:7, cellPadding:1.8, overflow:'linebreak', valign:'middle' },
+      headStyles:{ fillColor:[26,26,46], textColor:255, fontStyle:'bold', halign:'center' },
+      margin:{ top:26, left:10, right:10, bottom:18 },
+      willDrawCell: function(data) {
+        if (data.section !== 'body' || !_sitCol) return;
+        const rd = rows[data.row.index]; if (!rd) return;
+        const v = norm(String(rd[_sitCol]||''));
+        if (v.includes('anul'))        { data.cell.styles.fillColor=[254,226,226]; data.cell.styles.textColor=[153,27,27]; }
+        else if (v.includes('suspen')) { data.cell.styles.fillColor=[255,237,213]; data.cell.styles.textColor=[154,52,18]; }
+        else                           { data.cell.styles.fillColor=[255,255,255]; }
+      },
+      didDrawPage: d => {
+        doc.setFontSize(8);
+        doc.text(`Página ${d.pageNumber} de ${doc.internal.getNumberOfPages()}`,
+          doc.internal.pageSize.width/2, doc.internal.pageSize.height-8, {align:'center'});
+      }
+    });
+    doc.save('polizas.pdf');
+  }
+
+  function downloadBlob(content, filename, type) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([content],{type}));
+    a.download = filename; a.click();
+  }
+</script>
+</body>
+</html>
